@@ -421,7 +421,7 @@ namespace winrt::Microsoft::Terminal::Control::implementation
             {
                 auto lock = _terminal->LockForWriting();
                 _terminal->SelectAll();
-                _renderer->TriggerSelection();
+                _updateSelection(false);
                 return true;
             }
 
@@ -430,7 +430,7 @@ namespace winrt::Microsoft::Terminal::Control::implementation
             {
                 auto lock = _terminal->LockForWriting();
                 _terminal->UpdateSelection(updateSlnParams->first, updateSlnParams->second, modifiers);
-                _renderer->TriggerSelection();
+                _updateSelection(false);
                 return true;
             }
 
@@ -438,7 +438,7 @@ namespace winrt::Microsoft::Terminal::Control::implementation
             if (!modifiers.IsWinPressed())
             {
                 _terminal->ClearSelection();
-                _renderer->TriggerSelection();
+                _updateSelection(true);
             }
 
             // When there is a selection active, escape should clear it and NOT flow through
@@ -934,6 +934,32 @@ namespace winrt::Microsoft::Terminal::Control::implementation
         _terminal->SetSelectionAnchor(position);
     }
 
+    Core::Point ControlCore::SelectionAnchor() const
+    {
+        auto lock = _terminal->LockForReading();
+        const auto start = _terminal->SelectionStartForRendering();
+        return { start.X, start.Y };
+    }
+
+    Core::Point ControlCore::SelectionEnd() const
+    {
+        auto lock = _terminal->LockForReading();
+        const auto end = _terminal->SelectionEndForRendering();
+        return { end.X, end.Y };
+    }
+
+    bool ControlCore::MovingEnd() const
+    {
+        auto lock = _terminal->LockForReading();
+        return _terminal->MovingEnd();
+    }
+
+    bool ControlCore::MovingCursor() const
+    {
+        auto lock = _terminal->LockForReading();
+        return _terminal->MovingCursor();
+    }
+
     // Method Description:
     // - Sets selection's end position to match supplied cursor position, e.g. while mouse dragging.
     // Arguments:
@@ -956,7 +982,7 @@ namespace winrt::Microsoft::Terminal::Control::implementation
 
         // save location (for rendering) + render
         _terminal->SetSelectionEnd(terminalPosition);
-        _renderer->TriggerSelection();
+        _updateSelection(true);
     }
 
     // Called when the Terminal wants to set something to the clipboard, i.e.
@@ -1018,7 +1044,7 @@ namespace winrt::Microsoft::Terminal::Control::implementation
         if (!_settings->CopyOnSelect())
         {
             _terminal->ClearSelection();
-            _renderer->TriggerSelection();
+            _updateSelection(true);
         }
 
         // send data up for clipboard
@@ -1034,7 +1060,7 @@ namespace winrt::Microsoft::Terminal::Control::implementation
     {
         auto lock = _terminal->LockForWriting();
         _terminal->SelectAll();
-        _renderer->TriggerSelection();
+        _updateSelection(false);
     }
 
     bool ControlCore::ToggleBlockSelection()
@@ -1043,7 +1069,7 @@ namespace winrt::Microsoft::Terminal::Control::implementation
         if (_terminal->IsSelectionActive())
         {
             _terminal->SetBlockSelection(!_terminal->IsBlockSelection());
-            _renderer->TriggerSelection();
+            _updateSelection(false);
             return true;
         }
         return false;
@@ -1053,7 +1079,7 @@ namespace winrt::Microsoft::Terminal::Control::implementation
     {
         auto lock = _terminal->LockForWriting();
         _terminal->ToggleMarkMode();
-        _renderer->TriggerSelection();
+        _updateSelection(false);
     }
 
     bool ControlCore::IsInMarkMode() const
@@ -1068,7 +1094,7 @@ namespace winrt::Microsoft::Terminal::Control::implementation
     {
         _terminal->WritePastedText(hstr);
         _terminal->ClearSelection();
-        _renderer->TriggerSelection();
+        _updateSelection(true);
         _terminal->TrySnapOnInput();
     }
 
@@ -1388,7 +1414,7 @@ namespace winrt::Microsoft::Terminal::Control::implementation
         {
             _terminal->SetBlockSelection(false);
             search.Select();
-            _renderer->TriggerSelection();
+            _updateSelection(true);
         }
 
         // Raise a FoundMatch event, which the control will use to notify
@@ -1589,8 +1615,13 @@ namespace winrt::Microsoft::Terminal::Control::implementation
             _terminal->MultiClickSelection(terminalPosition, mode);
             selectionNeedsToBeCopied = true;
         }
+        _updateSelection(true);
+    }
 
+    void ControlCore::_updateSelection(const bool clearMarkers)
+    {
         _renderer->TriggerSelection();
+        _UpdateSelectionMarkersHandlers(*this, winrt::make<implementation::UpdateSelectionMarkersEventArgs>(clearMarkers));
     }
 
     void ControlCore::AttachUiaEngine(::Microsoft::Console::Render::IRenderEngine* const pEngine)
